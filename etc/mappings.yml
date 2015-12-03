@@ -1,7 +1,7 @@
 "OK":
   "provider": 
     - "ido"
-    - "mk-livestatus"
+    - "livestatus"
   "status": 0
   "mapped": 0
   "acknowledged": 0
@@ -10,7 +10,7 @@
 "DOWNTIME-WARNING":
   "provider": 
     - "ido"
-    - "mk-livestatus"
+    - "livestatus"
   "status": 1
   "mapped": 5
   "acknowledged": 0
@@ -19,7 +19,7 @@
 "DOWNTIME-UNKNOWN":
   "provider": 
     - "ido"
-    - "mk-livestatus"
+    - "livestatus"
   "status": 3
   "mapped": 10
   "acknowledged": 0
@@ -28,7 +28,7 @@
 "DOWNTIME-CRITICAL":
   "provider": 
     - "ido"
-    - "mk-livestatus"
+    - "livestatus"
   "status": 2
   "mapped": 15
   "acknowledged": 0
@@ -37,7 +37,7 @@
 "DOWNTIME-DOWN":
   "provider": 
     - "ido"
-    - "mk-livestatus"
+    - "livestatus"
   "status": 2
   "mapped": 20
   "acknowledged": 0
@@ -47,7 +47,7 @@
 "ACK-WARNING":
   "provider": 
     - "ido"
-    - "mk-livestatus"
+    - "livestatus"
   "status": 1
   "mapped": 25
   "acknowledged": 1
@@ -56,7 +56,7 @@
 "ACK-UNKNOWN":
   "provider": 
     - "ido"
-    - "mk-livestatus"
+    - "livestatus"
   "status": 3
   "mapped": 30
   "acknowledged": 1
@@ -65,7 +65,7 @@
 "WARNING":
   "provider": 
     - "ido"
-    - "mk-livestatus"
+    - "livestatus"
   "status": 1
   "mapped": 35
   "acknowledged": 0
@@ -74,7 +74,7 @@
 "UNKNOWN":
   "provider":
     - "ido"
-    - "mk-livestatus"
+    - "livestatus"
   "status": 3
   "mapped": 40
   "acknowledged": 0
@@ -83,7 +83,7 @@
 "ACK-CRITICAL":
   "provider": 
     - "ido"
-    - "mk-livestatus"
+    - "livestatus"
   "status": 2
   "mapped": 45
   "acknowledged": 1
@@ -92,7 +92,7 @@
 "ACK-DOWN":
   "provider": 
     - "ido"
-    - "mk-livestatus"
+    - "livestatus"
   "status": 2
   "mapped": 50
   "acknowledged": 1
@@ -102,7 +102,7 @@
 "CRITICAL":
   "provider": 
     - "ido"
-    - "mk-livestatus"
+    - "livestatus"
   "status": 2
   "mapped": 55
   "acknowledged": 0
@@ -111,7 +111,7 @@
 "DOWN":
   "provider": 
     - "ido"
-    - "mk-livestatus"
+    - "livestatus"
   "status": 2
   "mapped": 60
   "acknowledged": 0

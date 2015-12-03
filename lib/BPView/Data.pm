@@ -27,7 +27,7 @@
 package BPView::Data;
 
 BEGIN {
-    $VERSION = '2.000'; # Don't forget to set version and release
+    $VERSION = '2.100'; # Don't forget to set version and release
 }  						# date in POD below!
 
 use strict;
@@ -41,7 +41,12 @@ use JSON::PP;
 use Tie::IxHash;
 use Storable 'dclone';
 use POSIX qw( strftime );
-use Module::Pluggable search_path => "Plugins", instantiate => 'new';;
+use Module::Pluggable search_path => "BPView::Plugins", require => 1;
+
+# TODO: check why these modules are required!
+use Monitoring::Livestatus;
+use DBI;
+use DBD::Pg;
 
 use constant DISPLAY => '__display';
 use constant TOPICS => '__topics';
@@ -654,7 +659,7 @@ sub query_provider {
   # fetch data
   foreach my $provider (keys %{ $self->{ 'config' } }){
   	if (defined $self->{ 'config' }{ $provider }{ 'provider' }){
-
+  	 
       $log->debug("Fetching data for provider " . $provider);
       
       # check if a restart timeout is defined and if monitoring backend
@@ -679,36 +684,13 @@ sub query_provider {
         
       }
 
-  	  if ($self->{ 'config' }{ $provider }{ 'provider'} eq "ido"){
-
-        # construct SQL query
-        my $sql = $self->_query_ido( $self->{ 'config' }{ $provider }, '__all' );
-        # get results
-        $result = eval { $self->_get_ido( $self->{ 'config' }{ $provider }, $sql, "row" ) };
-        if ($@){
-          $log->error("Failed to fetch data from IDO: " . $@);
-          next;
-        }else{
-          $log->debug("Successfully fetched data from IDO");
-        }
-
-  	  }elsif ($self->{ 'config' }{ $provider }{'provider'} eq "mk-livestatus"){
-
-		# TODO: change to Plugin
-
-        # construct query
-        my $query = $self->_query_livestatus( '__all' );
-        # get results
-        $result = eval { $self->_get_livestatus( $self->{ 'config' }{ $provider }, $query, "row" ) };
-        if ($@){
-          $log->error("Failed to fetch data from livestatus: " . $@);
-          next;
-        }else{
-          $log->debug("Successfully fetched data from livestatus");
-        }
-
-  	  }else{
-        carp ("Unsupported provider: $self->{ 'config' }{ $provider }{ 'provider'}!");
+      # fetch data from upstream providers
+      my @plugins = plugins();
+      my $result = undef;
+      foreach my $plugin (@plugins){
+        next unless $plugin eq "BPView::Plugins::$self->{ 'config' }{ $provider }{ 'provider' }";
+        my $query = $plugin->query( $self->{ 'config' }{ $provider }, '__all' ) or $log->error("Failed to construct query for $provider");
+          $result = $plugin->get( $self->{ 'config' }{ $provider }, $query, "row" ) or $log->error("Failed to fetch data for $provider");
       }
       
       
@@ -810,409 +792,21 @@ sub query_provider {
 # internal methods
 ##################
 
-# construct SQL query for IDOutils
-sub _query_ido {
-	
-  my $self			= shift;
-  my $provdata		= shift or die ("Missing provdata!");
-  my $service_names	= shift or die ("Missing service_names!");
-  
-  my $sql = undef;
-  
-  # construct SQL query
-  # query all host and service data
-  if ($service_names eq "__all"){
-
-=cut
-Example query: Fetch host and service checks, acknowledges and scheduled downtimes
---------------
-
-SELECT DISTINCT
-	icinga_objects.name1 AS hostname,
-	coalesce(icinga_objects.name2,'__HOSTCHECK') AS name2,
-  coalesce(icinga_hoststatus.last_hard_state, icinga_servicestatus.last_hard_state) AS last_hard_state,
-  coalesce(icinga_hoststatus.problem_has_been_acknowledged, icinga_servicestatus.problem_has_been_acknowledged) AS acknowledged, 
-	coalesce(icinga_hoststatus.output, icinga_servicestatus.output) AS output,
-	coalesce(unix_timestamp(icinga_hoststatus.last_check), unix_timestamp(icinga_servicestatus.last_check)) AS last_check,
-	unix_timestamp() between unix_timestamp(icinga_scheduleddowntime.scheduled_start_time) AND
-	unix_timestamp(icinga_scheduleddowntime.scheduled_end_time) AS downtime
-FROM 
-	icinga_objects
-LEFT JOIN
-	icinga_scheduleddowntime 
-  ON icinga_scheduleddowntime.object_id = icinga_objects.object_id
-LEFT JOIN 
-	icinga_hoststatus 
-  ON icinga_objects.object_id=icinga_hoststatus.host_object_id
-LEFT JOIN 
-	icinga_servicestatus
-  ON icinga_objects.object_id=icinga_servicestatus.service_object_id 
-WHERE
-	icinga_objects.is_active = 1
-  AND (icinga_objects.objecttype_id=1 
-  OR icinga_objects.objecttype_id=2)
-  ORDER BY icinga_objects.name1;
-
-=cut
-
-    if ($provdata->{ 'type' } eq 'mysql'){
-    
-  	  $sql = "SELECT DISTINCT ";
-  	  $sql .= $provdata->{'prefix'} . "objects.name1 AS hostname, ";
-  	  $sql .= "coalesce(" . $provdata->{'prefix'} . "objects.name2, '__HOSTCHECK') AS name2, ";
-  	  $sql .= "coalesce(" . $provdata->{'prefix'} . "hoststatus.last_hard_state, " . $provdata->{'prefix'} . "servicestatus.last_hard_state) AS last_hard_state, ";
-  	  $sql .= "coalesce(" . $provdata->{'prefix'} . "hoststatus.problem_has_been_acknowledged, " . $provdata->{'prefix'} . "servicestatus.problem_has_been_acknowledged) AS acknowledged, ";
-  	  $sql .= "coalesce(" . $provdata->{'prefix'} . "hoststatus.output, " . $provdata->{'prefix'} . "servicestatus.output) AS output, ";
-  	  $sql .= "coalesce(unix_timestamp(" . $provdata->{'prefix'} . "hoststatus.last_check), unix_timestamp(" . $provdata->{'prefix'} . "servicestatus.last_check)) AS last_check, ";
-  	  $sql .= "unix_timestamp() between unix_timestamp(" . $provdata->{'prefix'} . "scheduleddowntime.scheduled_start_time) AND ";
-  	  $sql .= "unix_timestamp(" . $provdata->{'prefix'} . "scheduleddowntime.scheduled_end_time) AS downtime ";
-  	  $sql .= "FROM " . $provdata->{'prefix'} . "objects ";
-  	  $sql .= "LEFT JOIN " . $provdata->{'prefix'} . "scheduleddowntime ON ";
-  	  $sql .= $provdata->{'prefix'} . "scheduleddowntime.object_id=" . $provdata->{'prefix'} . "objects.object_id ";
-  	  $sql .= "LEFT JOIN " . $provdata->{'prefix'} . "hoststatus ON ";
-  	  $sql .= $provdata->{'prefix'} . "objects.object_id=" . $provdata->{'prefix'} . "hoststatus.host_object_id ";
-  	  $sql .= "LEFT JOIN " . $provdata->{'prefix'} . "servicestatus ON ";
-  	  $sql .= $provdata->{'prefix'} . "objects.object_id=" . $provdata->{'prefix'} . "servicestatus.service_object_id ";
-  	  $sql .= "WHERE " . $provdata->{'prefix'} . "objects.is_active=1 ";
-  	  $sql .= "AND (" . $provdata->{'prefix'} . "objects.objecttype_id=1 OR ";
-  	  $sql .= $provdata->{'prefix'} . "objects.objecttype_id=2) ";
-  	  $sql .= "ORDER BY " . $provdata->{'prefix'} . "objects.name1";
-  	
-    }elsif ($provdata->{ 'type' } eq 'pgsql'){
-
-  	  $sql = "SELECT DISTINCT ";
-  	  $sql .= $provdata->{'prefix'} . "objects.name1 AS hostname, ";
-  	  $sql .= "coalesce(" . $provdata->{'prefix'} . "objects.name2, '__HOSTCHECK') AS name2, ";
-  	  $sql .= "coalesce(" . $provdata->{'prefix'} . "hoststatus.last_hard_state, " . $provdata->{'prefix'} . "servicestatus.last_hard_state) AS last_hard_state, ";
-  	  $sql .= "coalesce(" . $provdata->{'prefix'} . "hoststatus.problem_has_been_acknowledged, " . $provdata->{'prefix'} . "servicestatus.problem_has_been_acknowledged) AS acknowledged, ";
-  	  $sql .= "coalesce(" . $provdata->{'prefix'} . "hoststatus.output, " . $provdata->{'prefix'} . "servicestatus.output) AS output, ";
-  	  $sql .= "coalesce(EXTRACT(EPOCH FROM " . $provdata->{'prefix'} . "hoststatus.last_check), EXTRACT(EPOCH FROM " . $provdata->{'prefix'} . "servicestatus.last_check)) AS last_check, ";
-  	  $sql .= "EXTRACT(EPOCH FROM NOW()) between EXTRACT(EPOCH FROM " . $provdata->{'prefix'} . "scheduleddowntime.scheduled_start_time) AND ";
-  	  $sql .= "EXTRACT(EPOCH FROM " . $provdata->{'prefix'} . "scheduleddowntime.scheduled_end_time) AS downtime ";
-  	  $sql .= "FROM " . $provdata->{'prefix'} . "objects ";
-  	  $sql .= "LEFT JOIN " . $provdata->{'prefix'} . "scheduleddowntime ON ";
-  	  $sql .= $provdata->{'prefix'} . "scheduleddowntime.object_id=" . $provdata->{'prefix'} . "objects.object_id ";
-  	  $sql .= "LEFT JOIN " . $provdata->{'prefix'} . "hoststatus ON ";
-  	  $sql .= $provdata->{'prefix'} . "objects.object_id=" . $provdata->{'prefix'} . "hoststatus.host_object_id ";
-  	  $sql .= "LEFT JOIN " . $provdata->{'prefix'} . "servicestatus ON ";
-  	  $sql .= $provdata->{'prefix'} . "objects.object_id=" . $provdata->{'prefix'} . "servicestatus.service_object_id ";
-  	  $sql .= "WHERE " . $provdata->{'prefix'} . "objects.is_active=1 ";
-  	  $sql .= "AND (" . $provdata->{'prefix'} . "objects.objecttype_id=1 OR ";
-  	  $sql .= $provdata->{'prefix'} . "objects.objecttype_id=2) ";
-  	  $sql .= "ORDER BY " . $provdata->{'prefix'} . "objects.name1";
-   
-    }else{
-      croak "Unsupported database type: $provdata->{ 'type' }";
-    }
-  	
-  }else{
-    # query data for specified service
-    $sql = "SELECT name2 AS service, current_state AS state FROM " . $provdata->{'prefix'} . "objects, " . $provdata->{'prefix'} . "servicestatus ";
-    $sql .= "WHERE object_id = service_object_id AND is_active = 1 AND name2 IN (";
-    # go trough service_names array
-    for (my $i=0;$i<scalar @{ $service_names };$i++){
-  	  $sql .= "'" . lc($service_names->[$i]) . "', ";
-    }
-    # remove trailing ', '
-    chop $sql;
-    chop $sql;
-    $sql .= ") ORDER BY name1";
-  }
-  
-  return $sql;
-  
-}
-
-
-#----------------------------------------------------------------
-
-# construct livetstatus query
-sub _query_livestatus {
-	
-  my $self			= shift;
-  my $service_names	= shift or die ("Missing service_names!");
-  
-  my $query = undef;
-   
-  # get service status for given host and services
-  # construct livestatus query
-  if ($service_names eq "__all"){
-  	$query->[0] = "GET services\n
-Columns: host_name description last_hard_state plugin_output last_check acknowledged\n";
-    # get host status
-    $query->[1] = "GET hosts\n
-Columns: name last_hard_state plugin_output last_check acknowledged";
-  }else{
-  	# query data for specified service
-    $query->[0] = "GET services\n
-Columns: display_name state\n";
-    # go through service array
-    for (my $i=0;$i< scalar @{ $service_names };$i++){
-   	  $query->[0] .= "Filter: display_name = " . lc($service_names->[$i]) . "\n";
-    }
-    $query->[0] .= "Or: " . scalar @{ $service_names } . "\n" if scalar @{ $service_names } > 1;
-  }
-  	  
-  return $query;
-  
-}
-
-
-#----------------------------------------------------------------
-
-# get service status from IDOutils
-sub _get_ido {
-	
-  my $self		= shift;
-  my $provdata 	= shift;
-  my $sql		= shift or die ("Missing SQL query!");
-  my $fetch		= shift;	# how to handle results
-  
-  my $result;
-  
-  my $dsn = undef;
-  # database driver
-  if ($provdata->{'type'} eq "mysql"){
-    use DBI;	  # MySQL
-  	$dsn = "DBI:mysql:database=$provdata->{'database'};host=$provdata->{'host'};port=$provdata->{'port'}";
-  }elsif ($provdata->{'type'} eq "pgsql"){
-	use DBD::Pg;  # PostgreSQL
-  	$dsn = "DBI:Pg:dbname=$provdata->{'database'};host=$provdata->{'host'};port=$provdata->{'port'}";
-  }else{
-  	croak "Unsupported database type: $provdata->{'type'}";
-  }
-  
-  # connect to database
-  my $dbh   = eval { DBI->connect_cached($dsn, $provdata->{'username'}, $provdata->{'password'}) };
-  if ($DBI::errstr){
-  	croak "$DBI::errstr: $@";
-  }
-  my $query = eval { $dbh->prepare( $sql ) };
-  eval { $query->execute };
-  if ($DBI::errstr){
-  	croak "$DBI::errstr: $@";
-  }
-  
-  # prepare return
-  if (! defined $fetch || $fetch eq "all"){
-  	# use hashref to fetch results
-    $result = $query->fetchall_hashref("service");
-  
-  # example output:
-  # $VAR1 = {
-  #        'production-mail-zarafa' => {
-  #                                      'service' => 'production-mail-zarafa',
-  #                                      'state' => '0'
-  #                                    },
-  
-  }elsif ($fetch eq "row"){
-  	# fetch all data and return array
-  	while (my $row = $query->fetchrow_hashref()){
-  	  
-  	  # set last hard state to 2 (critical) if host check is 1 (down)
-  	  if ($row->{ 'name2'} eq "__HOSTCHECK"){
-  	  	$row->{ 'last_hard_state' } = 2 if $row->{ 'last_hard_state' } != 0;
-  	  }
-  	  push @{ $result->{ $row->{ 'hostname' } } }, $row;
-  
-  # example output:
-  # $VAR1 = {
-  #         'loadbalancer' => [
-  #           {
-  #             'name2' => 'PING',
-  #             'last_hard_state' => '0',
-  #             'hostname' => 'loadbalancer',
-  #             'output' => ''
-  #           },
-  #         ]
-  #         },
-  	}
-  	
-  }elsif ($fetch eq "program_start"){
-  	$result = $query->fetchall_hashref("program_start");
-  	
-  	# example output:
-  	# $VAR1 = {
-    #      '1422429147' => {
-    #                        'program_start' => 1422429147
-    #                      }
-    #    };
-  	
-  }else{
-  	croak "Unsupported fetch method: " . $fetch;
-  }
-  
-  
-  # disconnect from database
-  #$dbh->disconnect;
-  
-  return $result;
-  
-}
-
-
-#----------------------------------------------------------------
-
-# get service status from mk-livestatus
-sub _get_livestatus {
-	
-  my $self		= shift;
-  my $provdata	= shift;
-  my $query		= shift or croak ("Missing livestatus query!");
-  my $fetch		= shift;	# how to handle results
-  
-  my $result;
-  my $ml;
-  
-  use Monitoring::Livestatus;
-  
-  # use socket or hostname:port?
-  if ($provdata->{ 'socket' }){
-    $ml = Monitoring::Livestatus->new( 	'socket' 	=> $provdata->{'socket'},
-    									'keepalive' => 1 );
-  }else{
-    $ml = Monitoring::Livestatus->new( 	'server' 	=> $provdata->{'server'} . ':' . $provdata->{'port'},
-    									'keepalive'	=> 1 );
-  }
-  
-  $ml->errors_are_fatal(0);
-  
-  # prepare return
-  if (! defined $fetch || $fetch eq "all"){
-  	
-    $result = $ml->selectall_hashref($query->[0], "display_name");
-    
-  # example output:
-  # $VAR1 = {
-  #        'production-mail-zarafa' => {
-  #                                      'service' => 'production-mail-zarafa',
-  #                                      'state' => '0'
-  #                                    },
-  
-    foreach my $key (keys %{ $result }){
-      # rename columns
-      $result->{ $key }{ 'service' } = delete $result->{ $key }{ 'display_name' };
-    }
-  
-  
-  }elsif ($fetch eq "row"){
-  	# fetch all data and return array
-  	my $tmp = undef;
-  	for (my $i=0;$i<=@{ $query };$i++){
-      push @{ $tmp }, $ml->selectall_arrayref($query->[$i]);
-  	}
-  	
-  	if (! defined $tmp){
-  	  my $provdetails = undef;
-  	  if ( $provdata->{'socket'} ){
-  	  	$provdetails = $provdata->{ 'socket' };
-      }else{
-    	$provdetails = $provdata->{'server'} . ':' . $provdata->{'port'};
-      }
-  	  croak "Got empty result from livestatus ($provdetails)";
-  	}
-    for (my $i=0; $i<scalar @{ $tmp }; $i++ ){
-      for (my $j=0; $j<scalar @{ $tmp->[ $i ] }; $j++ ){
-        my $tmphash = {};
-        # do we deal with host or service checks?
-        # host checks don't have description, so array doesn't have last entry
-        if (! defined $tmp->[$i][$j][5]){
-      	  # host check
-      	  $tmphash->{ 'name2' } = "__HOSTCHECK";
-      	  $tmphash->{ 'last_hard_state' } = $tmp->[$i][$j][1];
-          # set last hard state to 2 (critical) if host check is 1 (down)
-      	  $tmphash->{ 'last_hard_state' } = 2 if $tmp->[$i][$j][1] != 0;
-          $tmphash->{ 'hostname' } = $tmp->[$i][$j][0];
-          $tmphash->{ 'output' } = $tmp->[$i][$j][2];
-          $tmphash->{ 'last_check' } = $tmp->[$i][$j][3];
-          $tmphash->{ 'acknowledged' } = $tmp->[$i][$j][4];
-        }else{
-          $tmphash->{ 'name2' } = $tmp->[$i][$j][1];
-          $tmphash->{ 'last_hard_state' } = $tmp->[$i][$j][2];
-          $tmphash->{ 'hostname' } = $tmp->[$i][$j][0];
-          $tmphash->{ 'output' } = $tmp->[$i][$j][3];
-          $tmphash->{ 'last_check' } = $tmp->[$i][$j][4];
-          $tmphash->{ 'acknowledged' } = $tmp->[$i][$j][5];
-        }
-  	    push @{ $result->{ $tmp->[$i][$j][0] } }, $tmphash;
-      }
- 
-  # example output:
-  # $VAR1 = {
-  #         'loadbalancer' => [
-  #           {
-  #             'name2' => 'PING',
-  #             'last_hard_state' => '0',
-  #             'hostname' => 'loadbalancer',
-  #             'output' => '',
-  #             'last_check' => '1424453213'
-  #           },
-  #         ]
-  #         },
-  	}
-
-  }elsif ($fetch eq "program_start"){
-  	$result = $ml->selectall_hashref($query->[0], "program_start");
-  	
-  	# example output:
-  	# $VAR1 = {
-    #      '1422429147' => {
-    #                        'program_start' => 1422429147
-    #                      }
-    #    };
-    
-  }else{
-  	die "Unsupported fetch method: " . $fetch;
-  }
-  
-  if($Monitoring::Livestatus::ErrorCode) {
-    croak "Getting Monitoring checkresults failed: $Monitoring::Livestatus::ErrorMessage";
-  }
-  
-  return $result;
-  
-}
-
-
-#----------------------------------------------------------------
-
 # get last restart time of monitoring backend
 sub _get_restart_time {
 	
   my $self			= shift;
   my $provdata		= shift or die ("Missing provdata!");
   
+  my $log = $self->{ 'log' };
   my $result = undef;
-  my $query  = undef;
   
-  # prepare queries
-  if ($provdata->{ 'provider' } eq "ido"){
-    if ($provdata->{ 'type' } eq "mysql" ){
-      $query  = "SELECT UNIX_TIMESTAMP(program_start_time) AS program_start FROM " . $provdata->{ 'prefix' } . "programstatus ";
-      $query .= "ORDER BY instance_id DESC LIMIT 1";
-      $result = eval { $self->_get_ido( $provdata, $query, "program_start" ) };
-      if ($@){
-        carp "Failed to fetch program start time: " . $@;
-      }
-    }elsif ($provdata->{ 'type' } eq "pgsql"){
-      $query  = "SELECT EXTRACT(EPOCH FROM program_start_time) AS program_start FROM " . $provdata->{ 'prefix' } . "programstatus ";
-      $query .= "ORDER BY instance_id DESC LIMIT 1";
-      $result = eval { $self->_get_ido( $provdata, $query, "program_start" ) };
-      if ($@){
-        carp "Failed to fetch program start time: " . $@;
-      }     
-    }else{
-      croak "Unsupported database type: $provdata->{ 'type' }";
-    }
-  }elsif ($provdata->{ 'provider' } eq "mk-livestatus"){
-  	$query->[0] = "GET status\n
-Columns: program_start\n";
-    $result = eval { $self->_get_livestatus( $provdata, $query->[0], "program_start" ) };
-    if ($@){
-      carp "Failed to fetch program start time: " . $@;
-    }
-  }else{
-  	croak "Unsupported provider: $provdata->{ 'provider' }";
+  # fetch data from upstream providers
+  my @plugins = plugins();
+  foreach my $plugin (@plugins){
+    next unless $plugin eq "BPView::Plugins::$provdata->{ 'provider' }";
+    my $query = $plugin->query_starttime( $provdata ) or $log->error("Failed to construct query for $provdata->{ 'provider' }");
+      $result = $plugin->get_starttime( $provdata, $query ) or $log->error("Failed to fetch data for $provdata->{ 'provider' }");
   }
   
   return $result;
@@ -1321,7 +915,7 @@ Peter Stoeckl, E<lt>p.stoeckl@ovido.atE<gt>
 
 =head1 VERSION
 
-Version 2.000  (May 26 2015))
+Version 2.100  (Dec 02 2015))
 
 =head1 COPYRIGHT AND LICENSE
 

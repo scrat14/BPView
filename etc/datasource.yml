@@ -61,7 +61,7 @@ icinga-ido:
 #
 # Supported values are:
 # * ido
-# * mk-livestatus
+# * livestatus
 #
 
   provider: ido
@@ -150,17 +150,17 @@ icinga-ido:
 # monitoring system visit: http://mathias-kettner.de/checkmk_livestatus.html
 #
  
-mk-livestatus:
+livestatus:
 
 #
 # provider: Type of provider
 #
 # Supported values are:
 # * ido
-# * mk-livestatus
+# * livestatus
 #
 
-  provider: mk-livestatus
+  provider: livestatus
 
 #
 # socket: Path to mk-livetstatus socket if connection shall be

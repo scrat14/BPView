@@ -234,7 +234,7 @@ my $status_thread = $daemon->create_status_thread(
 # Client connection thread
 
 # creating a listening socket
-$log->info("Creating new listinging socket on $config->{ 'bpviewd' }{ 'local_host' }:$config->{ 'bpviewd' }{ 'local_port' }");
+$log->info("Creating new listening socket on $config->{ 'bpviewd' }{ 'local_host' }:$config->{ 'bpviewd' }{ 'local_port' }");
 my $socket = new IO::Socket::INET (
     LocalHost => $config->{ 'bpviewd' }{ 'local_host' },
     LocalPort => $config->{ 'bpviewd' }{ 'local_port' },
@@ -317,10 +317,10 @@ sub signalHandler {
 # do this stuff when exit() is called.
 END {
 	if (defined $pid_file){
-		$log->debug("Stopping bpviewd.");
+		$log->info("Stopping bpviewd.");
 		$log->debug("Removing PID file $pidfile.");
 		$pid_file->remove if defined $pid_file;
 	}else{
-		$log->debug("Stopping bpviewd child.");
+		$log->info("Stopping bpviewd child.");
 	}
 }

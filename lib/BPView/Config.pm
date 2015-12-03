@@ -560,7 +560,7 @@ sub _check_provider {
     # Supported databases are mysql and pgsql
     croak "ido: Unsupported database type: $config->{'type'}!" unless ( $config->{'type'} eq "mysql" || $config->{'type'} eq "pgsql" );
      
-  }elsif ($provider eq "mk-livestatus"){
+  }elsif ($provider eq "livestatus"){
    	 
    	# TODO: change to Plugin
    	 
