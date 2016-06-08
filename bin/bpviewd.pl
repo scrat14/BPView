@@ -3,7 +3,7 @@
 # COPYRIGHT:
 #
 # This software is Copyright (c) 2013 by ovido
-#                            (c) 2014-2015 BPView Development Team
+#                            (c) 2014-2016 BPView Development Team
 #                                     http://github.com/BPView/BPView
 #
 # This file is part of Business Process View (BPView).
@@ -26,7 +26,6 @@
 use strict;
 use warnings;
 use POSIX;
-use File::Pid;
 use Getopt::Long;
 use Log::Log4perl;
 use Cache::Memcached;
@@ -50,8 +49,6 @@ BEGIN {
   $cfg_path = "/etc/bpview";                         # path to BPViewd etc directory
   $cfg_files = "bpviewd.yml datasource.yml";         # bpviewd config files
   $log_path = "/var/log/bpview/";                    # log file path
-  $pid_path = "/var/run/";							 # path to /run or /var/run
-  $daemonName = "bpviewd";                           # the name of this daemon
   $logFile = $log_path. $daemonName . ".log";		 # logfile (default: /var/log/bpview/bpviewd.log)
 }
 
@@ -65,8 +62,6 @@ BEGIN {
 BEGIN {
   $dieNow = 0;		# used for "infinte loop" construct - allows daemon mode to gracefully exit
 }
-
-my $pidfile = $pid_path . $daemonName . ".pid";
 
 # Logging infomration
 my $logconf = "
@@ -85,7 +80,7 @@ $log->info("Starting bpviewd.");
 # check arguments
 Getopt::Long::Configure ("bundling");
 GetOptions(
-    'p:s'    => \$pidfile,     'pidfile:s'   => \$pidfile,
+#    'p:s'    => \$pidfile,     'pidfile:s'   => \$pidfile,
 );
 
 # load custom Perl modules
@@ -108,34 +103,6 @@ my $daemon = BPView::Daemon->new(
 #     bps          => $bps,
 #     filter       => "",
    );
-
-chdir '/';
-umask 0;
-open STDIN,  '/dev/null'   or die "Can't read /dev/null: $!";
-open STDOUT, '>>/dev/null' or die "Can't write to /dev/null: $!";
-open STDERR, '>>/dev/null' or die "Can't write to /dev/null: $!";
-defined( my $pid = fork ) or die "Can't fork: $!";
-exit if $pid;
-
-# dissociate this process from the controlling terminal that started it and stop being part
-# of whatever process group this process was a part of.
-POSIX::setsid() or $log->error_die("Can't start a new session.");
-
-# write PID file
-my $pid_file = File::Pid->new({
-				file	=> $pidfile,
-});
-
-if (-f $pidfile){
-  $log->error_die("$daemonName is already running or PID file exists.");
-}else{
-  $log->debug("Writing PID file $pidfile.");
-  $pid_file->write;
-}
-
-# callback signal handler for signals.
-$SIG{INT} = $SIG{TERM} = $SIG{HUP} = \&signalHandler;
-$SIG{PIPE} = 'ignore';
 
 # open config files if not cached
 my $conf = BPView::Config->new();
@@ -308,19 +275,3 @@ until ($dieNow) {
 
 }
 
-
-# catch signals and end the program if one is caught.
-sub signalHandler {
-	$dieNow = 1;    # this will cause the "infinite loop" to exit
-}
-
-# do this stuff when exit() is called.
-END {
-	if (defined $pid_file){
-		$log->debug("Stopping bpviewd.");
-		$log->debug("Removing PID file $pidfile.");
-		$pid_file->remove if defined $pid_file;
-	}else{
-		$log->debug("Stopping bpviewd child.");
-	}
-}

@@ -77,7 +77,6 @@ all:
 
 	cp $(SERVICESCRIPT).in $(SERVICESCRIPT).tmp
 	sed -i -e 's!PIDFile=.*!PIDFile=$(LOCALSTATEDIR)/run/bpviewd.pid!' $(SERVICESCRIPT).tmp
-	sed -i -e 's!ExecStart=.*!ExecStart=$(BINDIR)/bpviewd --pidfile $(LOCALSTATEDIR)/run/bpviewd.pid!' $(SERVICESCRIPT).tmp
 	cp $(SERVICESCRIPT).tmp $(SERVICESCRIPT)
 	rm -f $(SERVICESCRIPT).tmp
 
